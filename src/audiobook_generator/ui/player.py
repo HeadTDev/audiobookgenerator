@@ -1,4 +1,5 @@
 """Player bar: play/pause, clickable waveform seek bar, time and title."""
+import json
 import math
 import os
 import shutil
@@ -34,6 +35,8 @@ BAR_WIDTH = 3
 BAR_GAP = 2
 RATE_PRESETS = (0.8, 1.0, 1.25, 1.5, 1.75, 2.0)  # live player speeds
 SKIP_MS = 15000
+# One JSON value: paths contain "/" and "\", which QSettings treats as group separators.
+POSITIONS_KEY = "player/positions"
 
 
 def format_time(ms):
@@ -192,9 +195,14 @@ class WaveformSeekBar(QWidget):
 class PlayerBar(QFrame):
     """Owns the media player. Use load() to play a file and release() to free it."""
 
-    def __init__(self, parent=None):
+    progress_changed = Signal(str)  # mp3 path whose saved position or listened flag changed
+
+    def __init__(self, settings, parent=None):
         super().__init__(parent, objectName="playerBar")
         self.available = HAS_MULTIMEDIA
+        self.settings = settings
+        self.positions = self._load_positions()  # normalised path -> {"pos", "mtime", "listened"}
+        self._pending_seek = None  # resume position, applied once the media has loaded
         self.current_path = None
         self.peak_cache = {}  # (path, mtime) -> peaks
         self.loader = None
@@ -266,10 +274,15 @@ class PlayerBar(QFrame):
         self.player.positionChanged.connect(self._on_position_changed)
         self.player.durationChanged.connect(self._on_duration_changed)
         self.player.playbackStateChanged.connect(self._on_state_changed)
+        self.player.mediaStatusChanged.connect(self._on_media_status_changed)
         self.wave.seek_requested.connect(self.player.setPosition)
 
     def load(self, path, title):
+        self._remember_position()  # for the previous file, before the source change zeroes it
         self.current_path = path
+        entry = self._entry(path)
+        resume = entry["pos"] if entry and not entry["listened"] else 0
+        self._pending_seek = resume if resume > 0 else None
         self.player.setSource(QUrl.fromLocalFile(path))
         self.player.setPlaybackRate(self._rate)  # may reset on a source change, backend-dependent
         self.player.play()
@@ -284,9 +297,11 @@ class PlayerBar(QFrame):
         """Stop and unload, so Windows drops its lock on the file."""
         if not self.available:
             return
+        self._remember_position()  # stop() and setSource() both emit positionChanged(0)
         self.player.stop()
         self.player.setSource(QUrl())
         self.current_path = None
+        self._pending_seek = None
         self.title_label.setText("Nothing playing")
         self.title_label.setToolTip("")
         self._set_controls_enabled(False)
@@ -300,6 +315,77 @@ class PlayerBar(QFrame):
         self.release()
         if self.loader and self.loader.isRunning():
             self.loader.wait()
+
+    @staticmethod
+    def _key(path):
+        return os.path.normcase(os.path.normpath(path))
+
+    def _load_positions(self):
+        """Read the saved positions, dropping files that are gone or were regenerated."""
+        try:
+            raw = json.loads(self.settings.value(POSITIONS_KEY, "", type=str) or "{}")
+        except ValueError:
+            return {}
+        positions = {}
+        if not isinstance(raw, dict):
+            return positions
+        for path, entry in raw.items():
+            try:
+                if os.path.getmtime(path) != entry["mtime"]:
+                    continue
+                positions[self._key(path)] = {
+                    "pos": max(0, int(entry["pos"])),
+                    "mtime": float(entry["mtime"]),
+                    "listened": bool(entry["listened"]),
+                }
+            except (OSError, KeyError, TypeError, ValueError):
+                continue
+        return positions
+
+    def _entry(self, path):
+        """The saved entry for path, or None; a file changed since it was saved resets."""
+        key = self._key(path)
+        entry = self.positions.get(key)
+        if entry is None:
+            return None
+        try:
+            if os.path.getmtime(path) == entry["mtime"]:
+                return entry
+        except OSError:
+            pass
+        del self.positions[key]
+        return None
+
+    def _flush_positions(self):
+        self.settings.setValue(POSITIONS_KEY, json.dumps(self.positions))
+
+    def _record(self, path, pos=None, listened=None):
+        """Update one entry, persist, and announce it. None keeps the old value."""
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            return
+        entry = self._entry(path) or {"pos": 0, "mtime": mtime, "listened": False}
+        if pos is not None:
+            entry["pos"] = max(0, int(pos))
+        if listened is not None:
+            entry["listened"] = listened
+        self.positions[self._key(path)] = entry
+        self._flush_positions()
+        self.progress_changed.emit(path)
+
+    def _remember_position(self):
+        """Save the current position. Read it from the player, never from positionChanged."""
+        if not self.available or not self.current_path:
+            return
+        if self.player.playbackState() == QMediaPlayer.PlaybackState.StoppedState:
+            return
+        self._record(self.current_path, pos=self.player.position())
+
+    def progress_for(self, path):
+        """(listened, saved position in ms) for an MP3; (False, 0) when unknown."""
+        entry = self._entry(path) if path else None
+        return (entry["listened"], entry["pos"]) if entry else (False, 0)
 
     def _set_controls_enabled(self, enabled):
         for button in (self.back_btn, self.play_btn, self.forward_btn):
@@ -367,6 +453,15 @@ class PlayerBar(QFrame):
         self.wave.set_duration(duration)
         self.duration_label.setText(format_time(duration))
 
+    def _on_media_status_changed(self, status):
+        if status == QMediaPlayer.MediaStatus.LoadedMedia and self._pending_seek is not None:
+            self.player.setPosition(self._pending_seek)  # ignored if sent right after setSource
+            self._pending_seek = None
+        elif status == QMediaPlayer.MediaStatus.EndOfMedia and self.current_path:
+            self._record(self.current_path, pos=0, listened=True)
+
     def _on_state_changed(self, state):
+        if state == QMediaPlayer.PlaybackState.PausedState:
+            self._remember_position()
         playing = state == QMediaPlayer.PlaybackState.PlayingState
         self.play_btn.setIcon(theme.pause_icon() if playing else theme.play_icon())

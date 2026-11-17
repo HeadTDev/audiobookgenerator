@@ -48,7 +48,7 @@ from ..core.script_writer import ScriptWriterThread
 from ..core.text import audio_metadata_for, clean_markdown_text, output_name_for
 from ..core.worker import GeneratorThread
 from . import theme
-from .player import SKIP_MS, PlayerBar
+from .player import SKIP_MS, PlayerBar, format_time
 
 COL_CHECK, COL_NUM, COL_TITLE, COL_CHARS, COL_ISSUES, COL_STATUS, COL_PLAY = range(7)
 SORTABLE_COLUMNS = (COL_NUM, COL_TITLE, COL_CHARS, COL_ISSUES)
@@ -317,9 +317,10 @@ class MainWindow(QMainWindow):
         self.table.hide()
         layout.addWidget(self.table, 1)
 
-        self.player_bar = PlayerBar()
+        self.player_bar = PlayerBar(self.settings)
         if not self.player_bar.available:
             self.player_bar.hide()  # rows still play through the system default player
+        self.player_bar.progress_changed.connect(self._on_progress_changed)
         layout.addWidget(self.player_bar)
         layout.addWidget(self._build_progress_area())
         return layout
@@ -593,12 +594,24 @@ class MainWindow(QMainWindow):
     def _update_play_cell(self, info):
         item = info["items"]["play"]
         if info["mp3"]:
-            item.setText("▶ Play")
-            item.setForeground(QColor(theme.ACCENT))
+            listened, pos = self.player_bar.progress_for(info["mp3"])
+            if listened:
+                item.setText("✓ Listened")
+                item.setForeground(QColor(theme.MUTED))
+            else:
+                item.setText(f"▶ {format_time(pos)}" if pos > 0 else "▶ Play")
+                item.setForeground(QColor(theme.ACCENT))
             item.setToolTip(info["mp3"])
         else:
             item.setText("")
             item.setToolTip("")
+
+    def _on_progress_changed(self, path):
+        """Refresh the play cell of the row showing this MP3 (no full list refresh)."""
+        key = os.path.normcase(os.path.normpath(path))
+        for info in self.rows.values():
+            if info["mp3"] and os.path.normcase(os.path.normpath(info["mp3"])) == key:
+                self._update_play_cell(info)
 
     def _row_info(self, row_index):
         check = self.table.item(row_index, COL_CHECK)

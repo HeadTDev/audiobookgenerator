@@ -11,7 +11,7 @@ depend on ElevenLabs features that have not been tested yet.
 | 3 | Synchronised transcript and chapters | Idea |
 | 4 | Exam mode: question, pause, answer | Idea |
 | 5 | Real credit balance from the ElevenLabs account | Idea |
-| 6 | Better player: live speed, resume, skip | Idea |
+| 6 | Better player: live speed, resume, skip | **Done** |
 | 7 | Phone export as M4B audiobook | Idea |
 | 8 | Dialogue mode: teacher and student voices | Idea |
 | 9 | Installable app for classmates | Idea |
@@ -52,12 +52,13 @@ Replace the list-price estimate with real numbers: "This run uses ~120,000 credi
 380,000 left." The API has a subscription endpoint for this; the exact call is
 *unverified*.
 
-## 6. Better player
+## 6. Better player (done)
 
-- Change playback speed live, without re-encoding the file.
-- Remember the position per file and resume from there.
-- ±15 second skip buttons.
-- Mark files as "listened" in the list.
+- Live playback speed (0.8x to 2.0x) that multiplies the narration speed baked into the MP3.
+- ±15 second skip buttons, also on Ctrl+Left / Ctrl+Right.
+- The position is remembered per file and playback resumes from it.
+- Finished files show "Listened" in the list. Position and marker reset when the file is
+  regenerated.
 
 ## 7. Phone export as M4B audiobook
 

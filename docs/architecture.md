@@ -80,6 +80,13 @@ failures to user-facing messages.
   `os.replace` would fail. Rows being regenerated cannot be played during the run.
 - Settings (folders, voice, speed, window, log visibility) are stored with `QSettings`
   (Windows registry, `HKCU\Software\AudiobookGenerator`).
+- Player: positions live in one `QSettings` value, `player/positions`, a JSON map
+  `path -> {pos, mtime, listened}` (paths are not used as keys: `/` and `\` are group
+  separators). Entries whose file is gone or has a different mtime are dropped. The position
+  is read from `player.position()` before `stop()` / `setSource()` and on pause, never from
+  `positionChanged`, because stopping or switching source emits `positionChanged(0)`. A resume
+  position is applied on `LoadedMedia`, since a seek right after `setSource` may be ignored.
+  `EndOfMedia` sets the listened flag.
 - The waveform is decoded with FFmpeg on a background thread (RMS envelope, 600 points).
 
 ## Tests
