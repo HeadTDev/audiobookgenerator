@@ -34,14 +34,17 @@ from ..core.config import (
     API_KEY_VAR,
     CHUNK_CACHE_DIR,
     ENV_PATH,
+    GEMINI_KEY_VAR,
     LANGUAGE_CODE,
     LIST_PRICE_USD_PER_1K_CHARS,
     LOG_DIR,
     MODEL_ID,
     VOICES,
     load_api_key,
+    load_gemini_key,
 )
 from ..core.preflight import MISREAD, check_script, count_by_severity
+from ..core.script_writer import ScriptWriterThread
 from ..core.text import audio_metadata_for, clean_markdown_text, output_name_for
 from ..core.worker import GeneratorThread
 from . import theme
@@ -83,6 +86,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.settings = settings or QSettings("AudiobookGenerator", "AudiobookGenerator")
         self.worker = None
+        self.script_worker = None
         self.log_file = None
         self.rows = {}  # script path -> row info (items keep their identity across sorting)
         self.failed = {}  # script path -> detail, kept visible after the post-run refresh
@@ -185,6 +189,18 @@ class MainWindow(QMainWindow):
             "Output folder", "Where the MP3 files go", self.browse_output_folder
         )
         layout.addLayout(box)
+
+        self.notes_btn = QPushButton("Notes → Script…")
+        self.notes_btn.setToolTip(
+            "Write a narration script from .txt/.md notes with Gemini; saved into the scripts folder."
+        )
+        self.notes_btn.clicked.connect(self.start_notes_to_script)
+        layout.addWidget(self.notes_btn)
+        privacy = QLabel(
+            "Gemini free tier: Google may use the notes to improve its products.", objectName="mutedLabel"
+        )
+        privacy.setWordWrap(True)
+        layout.addWidget(privacy)
 
         layout.addSpacing(6)
         layout.addWidget(self._section_label("Narration"))
@@ -700,6 +716,58 @@ class MainWindow(QMainWindow):
         )
         return answer == QMessageBox.StandardButton.Yes
 
+    def start_notes_to_script(self):
+        input_folder = self.input_edit.text()
+        if not input_folder or not os.path.isdir(input_folder):
+            QMessageBox.warning(self, "Scripts folder", "Choose a valid scripts folder first.")
+            return
+        api_key = load_gemini_key()
+        if not api_key:
+            QMessageBox.warning(
+                self, "Gemini API key missing", f"Set {GEMINI_KEY_VAR} in the .env file:\n{ENV_PATH}"
+            )
+            return
+        start = self.settings.value("notes_folder", "", type=str)
+        if not start or not os.path.isdir(start):
+            start = input_folder
+        notes_path, _ = QFileDialog.getOpenFileName(
+            self, "Select notes", start, "Notes (*.txt *.md)"
+        )
+        if not notes_path:
+            return
+        self.settings.setValue("notes_folder", os.path.dirname(notes_path))
+        name = os.path.basename(notes_path)
+        # Every *.md in the scripts folder is listed as a script and starts ticked, so raw
+        # notes there would be sent to ElevenLabs by accident.
+        if (
+            name.lower().endswith(".md")
+            and not name.upper().endswith("_SCRIPT.MD")
+            and os.path.samefile(os.path.dirname(notes_path), input_folder)
+        ):
+            QMessageBox.warning(
+                self,
+                "Notes → Script",
+                "Notes in the scripts folder are listed as scripts and would be generated. "
+                "Move the notes out of this folder first.",
+            )
+            return
+        self.notes_btn.setEnabled(False)
+        self.notes_btn.setText("Writing script…")
+        self.script_worker = ScriptWriterThread(api_key, notes_path, input_folder)
+        self.script_worker.log_msg.connect(self.log)
+        self.script_worker.done.connect(self._script_written)
+        self.script_worker.start()
+
+    def _script_written(self, success, message, path):
+        self.notes_btn.setEnabled(True)
+        self.notes_btn.setText("Notes → Script…")
+        if success:
+            self.log(message)
+            if not self.generating:
+                self.refresh_file_list()
+        else:  # the thread already logged the error
+            QMessageBox.warning(self, "Notes → Script", message)
+
     def start_generation(self):
         selected = self.selected_rows()
         if not selected:
@@ -862,6 +930,8 @@ class MainWindow(QMainWindow):
             # Waits for the chunks already in flight so they are saved.
             self.worker.stop()
             self.worker.wait()
+        if self.script_worker and self.script_worker.isRunning():
+            self.script_worker.wait()
         self.player_bar.shutdown()
         self._close_log_file()
         self._save_settings()
