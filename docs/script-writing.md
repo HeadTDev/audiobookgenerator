@@ -3,6 +3,9 @@
 Write every script the way it should sound. The app does not rewrite notation; the
 pre-flight check (CHECK column) points out what to fix before you pay.
 
+These rules are condensed into `PROMPT_RULES` in `core/script_writer.py` (Notes → Script);
+keep both in sync.
+
 ## Confirmed with Eleven v4 (tested with speech-to-text)
 
 | Written | What v4 does | Write instead |

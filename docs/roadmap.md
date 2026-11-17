@@ -6,7 +6,7 @@ depend on ElevenLabs features that have not been tested yet.
 
 | # | Idea | Status |
 |---|---|---|
-| 1 | Notes to script with an LLM | Idea |
+| 1 | Notes to script with an LLM | **Done** (first slice: .txt/.md notes) |
 | 2 | Pre-flight pronunciation check | **Done** |
 | 3 | Synchronised transcript and chapters | Idea |
 | 4 | Exam mode: question, pause, answer | Idea |
@@ -16,13 +16,16 @@ depend on ElevenLabs features that have not been tested yet.
 | 8 | Dialogue mode: teacher and student voices | Idea |
 | 9 | Installable app for classmates | Idea |
 
-## 1. Notes to script with an LLM
+## 1. Notes to script with an LLM (first slice done)
 
-Today scripts have to be written in advance. The app could take lecture notes, PDFs, DOCX
-files or slide decks and turn them into narration-ready scripts with an LLM (for example
-Claude). The pronunciation rules from [script-writing.md](script-writing.md) go straight
-into the prompt: no slashes, formulas spelled out in words, brackets only for audio tags.
-This is the step that turns the app into "notes in, audiobook out".
+The "Notes → Script…" button turns a `.txt` or `.md` notes file into a narration script
+with Gemini on the free tier (a Google AI Studio key, not Claude). One prompt carries the
+pronunciation rules from [script-writing.md](script-writing.md); the reply goes through the
+pre-flight check, and Gemini gets one repair round for the spots it flags. The result is
+saved into the scripts folder as `_SCRIPT.md`. See `core/script_writer.py`.
+
+Remaining: PDF, DOCX and PPTX input. Notes in other languages than Hungarian still get the
+fixed Hungarian TTS language code.
 
 ## 2. Pre-flight pronunciation check (done)
 

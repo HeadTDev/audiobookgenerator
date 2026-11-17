@@ -6,9 +6,10 @@
 src/audiobook_generator/
 ├── app.py              QApplication, window icon, Windows taskbar identity
 ├── core/               generation engine (no widgets)
-│   ├── config.py       model, voices, limits, .env loading (ELEVENLABS_API_KEY)
+│   ├── config.py       models, voices, limits, .env loading (ELEVENLABS_API_KEY, GEMINI_API_KEY, GEMINI_MODEL)
 │   ├── text.py         script cleaning, chunking, output names, MP3 tags
 │   ├── preflight.py    notation the voice would misread
+│   ├── script_writer.py  notes to script with Gemini: prompt, repair round, thread
 │   └── worker.py       GeneratorThread: parallel requests, cache, FFmpeg merge
 └── ui/                 Qt widgets
     ├── main_window.py  file table, sidebar, progress, log, settings
@@ -58,6 +59,19 @@ Signals: `log_msg`, `progress(done, total)`, `eta_update(seconds)`,
 `file_status(path, state, detail)` with states queued, generating, merging, done, failed
 and partial, and `done(success, message)`.
 
+## Notes to script (`core/script_writer.py`)
+
+`ScriptWriterThread` (same shape as `GeneratorThread`: `log_msg`, `done(success, message,
+path)`) reads a `.txt`/`.md` file (UTF-8, cp1250 fallback; capped at `MAX_NOTES_CHARS`) and
+calls Gemini once. The prompt is embedded in code (`PROMPT_RULES`), because `docs/` is not
+shipped with the package; it condenses [script-writing.md](script-writing.md). The reply is
+checked with `check_script`; on issues, one repair call sends them back in a multi-turn
+conversation. The repair is kept only if it has no more MISREAD/CHECK issues and is not
+suspiciously shorter (a truncated rewrite). The script is saved as `<stem>_SCRIPT.md`,
+`<stem>_2_SCRIPT.md` and so on on a name clash, never overwriting. The SDK retries 5xx
+only; 429 is reported at once. `describe_error` maps refusals, quota, key, model and network
+failures to user-facing messages.
+
 ## UI notes
 
 - The file table sorts once per header click (live sorting is off), so status updates
@@ -70,6 +84,6 @@ and partial, and `done(success, message)`.
 
 ## Tests
 
-`python -m pytest` runs offscreen in a few seconds. A fake ElevenLabs client replaces the
-SDK, so no request is ever paid; tests use temporary folders and settings and never read
+`python -m pytest` runs offscreen in a few seconds. A fake ElevenLabs client and a fake Gemini
+client replace the SDKs, so no request is ever paid; tests use temporary folders and settings and never read
 the real `.env`. Tests that need FFmpeg are skipped when it is not on `PATH`.
