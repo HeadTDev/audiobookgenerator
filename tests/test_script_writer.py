@@ -48,6 +48,7 @@ def turn_texts(call):
 def test_prompts_carry_rules_and_notes():
     system = build_system_prompt()
     assert "[serious]" in system and "vagy" in system and "same language" in system
+    assert "`I-O`" in system
     user = build_user_prompt("# Busz\nszöveg", "busz.md")
     assert "busz.md" in user and "# Busz\nszöveg" in user and "Suggested title: Busz" in user
     assert "Suggested title: jegyzet" in build_user_prompt("szöveg", "jegyzet.txt")
@@ -89,6 +90,56 @@ def test_failed_repair_keeps_first_draft():
     fake = FakeGemini(reply(BAD), busy)
     result = notes_to_script(fake, "jegyzet", "j.md")
     assert result.text == BAD.strip() and not result.repaired and result.issues
+
+
+QUOTA = errors.ClientError(429, {"error": {"message": "quota", "status": "RESOURCE_EXHAUSTED"}})
+BUSY = errors.ServerError(503, {"error": {"message": "busy", "status": "UNAVAILABLE"}})
+GONE = errors.ClientError(404, {"error": {"message": "gone", "status": "NOT_FOUND"}})
+
+
+def httpx2_error(name):
+    """An exception class that looks like it comes from the SDK's httpx2 transport."""
+    return type(name, (Exception,), {"__module__": "httpx2._exceptions"})("boom")
+
+
+@pytest.mark.parametrize("error", [QUOTA, BUSY, GONE, httpx2_error("ReadTimeout")])
+def test_model_specific_error_falls_back_to_next_model(error):
+    fake = FakeGemini(error, reply(BAD), reply(CLEAN))
+    logs = []
+    result = notes_to_script(fake, "jegyzet", "j.md", log=logs.append)
+    assert [c["model"] for c in fake.calls] == [GEMINI_MODELS[0], GEMINI_MODELS[1], GEMINI_MODELS[1]]
+    assert result.model == GEMINI_MODELS[1] and result.repaired  # repair stays on the model that answered
+    assert any("trying next model" in m for m in logs)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        errors.ClientError(401, {"error": {"message": "nope", "status": "UNAUTHENTICATED"}}),
+        httpx2_error("ConnectError"),
+        httpx2_error("ConnectTimeout"),
+        ScriptWriterError("Gemini refused the notes (SAFETY)."),
+    ],
+)
+def test_key_network_and_refusal_errors_do_not_fall_back(error):
+    fake = FakeGemini(error, reply(CLEAN))
+    with pytest.raises(type(error)):
+        notes_to_script(fake, "jegyzet", "j.md")
+    assert len(fake.calls) == 1
+
+
+def test_all_models_failing_raises_last_error():
+    fake = FakeGemini(*([BUSY] * (len(GEMINI_MODELS) - 1)), QUOTA)
+    with pytest.raises(ScriptWriterError, match="All Gemini models failed.*limit reached"):
+        notes_to_script(fake, "jegyzet", "j.md")
+    assert [c["model"] for c in fake.calls] == list(GEMINI_MODELS)
+
+
+def test_stop_request_ends_the_chain():
+    fake = FakeGemini(QUOTA, reply(CLEAN))
+    with pytest.raises(ScriptWriterError, match="Stopped"):
+        notes_to_script(fake, "jegyzet", "j.md", should_stop=lambda: bool(fake.calls))
+    assert len(fake.calls) == 1
 
 
 def test_code_fence_is_stripped():
