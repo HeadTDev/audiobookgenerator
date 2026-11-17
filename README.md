@@ -4,7 +4,8 @@
 
 Turns Markdown scripts (`*_SCRIPT.md`) into MP3 audiobooks with ElevenLabs (Eleven v4):
 parallel generation, resumable runs, a pre-flight pronunciation check, loudness-normalised
-and tagged MP3s, and a built-in player with a clickable waveform.
+and tagged MP3s, and a built-in player with a clickable waveform, live playback speed (0.8x-2.0x, multiplies the
+narration speed baked into the MP3) and 15 s skip buttons (Ctrl+Left / Ctrl+Right).
 
 ## Setup on a new machine
 

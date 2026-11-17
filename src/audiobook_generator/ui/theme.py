@@ -261,6 +261,15 @@ QPushButton:disabled, QToolButton:disabled {{
     color: #5a5e66;
 }}
 
+#skipButton {{
+    padding: 4px 8px;
+    min-width: 34px;
+    color: {MUTED};
+}}
+#rateCombo {{
+    min-width: 48px;
+}}
+
 /* ---------- Sliders ---------- */
 QSlider::groove:horizontal {{
     height: 4px;

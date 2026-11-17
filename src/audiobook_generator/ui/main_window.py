@@ -48,7 +48,7 @@ from ..core.script_writer import ScriptWriterThread
 from ..core.text import audio_metadata_for, clean_markdown_text, output_name_for
 from ..core.worker import GeneratorThread
 from . import theme
-from .player import PlayerBar
+from .player import SKIP_MS, PlayerBar
 
 COL_CHECK, COL_NUM, COL_TITLE, COL_CHARS, COL_ISSUES, COL_STATUS, COL_PLAY = range(7)
 SORTABLE_COLUMNS = (COL_NUM, COL_TITLE, COL_CHARS, COL_ISSUES)
@@ -210,7 +210,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.voice_combo)
 
         speed_row = QHBoxLayout()
-        speed_row.addWidget(QLabel("Playback speed", objectName="fieldLabel"))
+        speed_row.addWidget(QLabel("Narration speed", objectName="fieldLabel"))
         speed_row.addStretch()
         self.speed_value = QLabel("1.2x", objectName="summaryMain")
         speed_row.addWidget(self.speed_value)
@@ -219,7 +219,10 @@ class MainWindow(QMainWindow):
         self.speed_slider.setRange(10, 20)
         self.speed_slider.setValue(12)
         self.speed_slider.setPageStep(1)
-        self.speed_slider.setToolTip("Applied with FFmpeg after generation; costs nothing extra.")
+        self.speed_slider.setToolTip(
+            "Applied with FFmpeg after generation; costs nothing extra. It is baked into the "
+            "MP3; the player has its own live speed."
+        )
         self.speed_slider.valueChanged.connect(
             lambda v: self.speed_value.setText(f"{v / 10:.1f}x")
         )
@@ -353,6 +356,12 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Return"), self, activated=self._shortcut_generate)
         QShortcut(QKeySequence("Ctrl+F"), self, activated=self.search_edit.setFocus)
         QShortcut(QKeySequence(Qt.Key.Key_Space), self, activated=self.player_bar.toggle)
+        QShortcut(
+            QKeySequence("Ctrl+Left"), self, activated=lambda: self.player_bar.skip(-SKIP_MS)
+        )
+        QShortcut(
+            QKeySequence("Ctrl+Right"), self, activated=lambda: self.player_bar.skip(SKIP_MS)
+        )
 
     def _shortcut_generate(self):
         if self.generate_btn.isEnabled():
@@ -368,6 +377,7 @@ class MainWindow(QMainWindow):
         voice = s.value("voice", "", type=str)
         self.voice_combo.setCurrentIndex(max(0, self.voice_combo.findText(voice)))
         self.speed_slider.setValue(s.value("speed", 12, type=int))
+        self.player_bar.set_rate(s.value("player_rate", 1.0, type=float))
         output_folder = s.value("output_folder", "", type=str)
         if output_folder and os.path.isdir(output_folder):
             self.output_edit.setText(output_folder)
@@ -386,6 +396,7 @@ class MainWindow(QMainWindow):
         s.setValue("output_folder", self.output_edit.text())
         s.setValue("voice", self.voice_combo.currentText())
         s.setValue("speed", self.speed_slider.value())
+        s.setValue("player_rate", self.player_bar.rate)
         s.setValue("log_visible", not self.log_view.isHidden())
         s.sync()
 

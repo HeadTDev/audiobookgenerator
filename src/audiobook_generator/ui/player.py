@@ -8,6 +8,7 @@ from array import array
 from PySide6.QtCore import QRectF, QSize, Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -31,6 +32,8 @@ PEAK_COUNT = 600  # waveform resolution; the widget resamples it to the bars tha
 DECODE_RATE = 800  # Hz: plenty for an amplitude envelope, keeps decoding fast
 BAR_WIDTH = 3
 BAR_GAP = 2
+RATE_PRESETS = (0.8, 1.0, 1.25, 1.5, 1.75, 2.0)  # live player speeds
+SKIP_MS = 15000
 
 
 def format_time(ms):
@@ -200,6 +203,13 @@ class PlayerBar(QFrame):
         layout.setContentsMargins(16, 10, 16, 10)
         layout.setSpacing(14)
 
+        self.back_btn = QPushButton("−15 s", objectName="skipButton")
+        self.back_btn.setToolTip("Back 15 seconds (Ctrl+Left)")
+        self.back_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # keep Space on the window shortcut
+        self.back_btn.setEnabled(False)
+        self.back_btn.clicked.connect(lambda: self.skip(-SKIP_MS))
+        layout.addWidget(self.back_btn)
+
         self.play_btn = QPushButton(objectName="playButton")
         self.play_btn.setIcon(theme.play_icon())
         self.play_btn.setIconSize(QSize(14, 14))
@@ -207,6 +217,13 @@ class PlayerBar(QFrame):
         self.play_btn.setEnabled(False)
         self.play_btn.clicked.connect(self.toggle)
         layout.addWidget(self.play_btn)
+
+        self.forward_btn = QPushButton("+15 s", objectName="skipButton")
+        self.forward_btn.setToolTip("Forward 15 seconds (Ctrl+Right)")
+        self.forward_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.forward_btn.setEnabled(False)
+        self.forward_btn.clicked.connect(lambda: self.skip(SKIP_MS))
+        layout.addWidget(self.forward_btn)
 
         column = QVBoxLayout()
         column.setSpacing(2)
@@ -226,6 +243,21 @@ class PlayerBar(QFrame):
         column.addLayout(row)
         layout.addLayout(column, 1)
 
+        self._rate = 1.0
+        self.rate_combo = QComboBox(objectName="rateCombo")
+        for preset in RATE_PRESETS:
+            self.rate_combo.addItem(f"{preset:g}x", preset)
+        self.rate_combo.setCurrentIndex(RATE_PRESETS.index(self._rate))
+        self.rate_combo.setToolTip(
+            "Live playback speed. It multiplies the narration speed baked into the MP3 "
+            "(e.g. a 1.2x file at 1.5x plays at 1.8x)."
+        )
+        self.rate_combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.rate_combo.currentIndexChanged.connect(
+            lambda i: self.set_rate(self.rate_combo.itemData(i))
+        )
+        layout.addWidget(self.rate_combo)
+
         if not self.available:
             return
         self.player = QMediaPlayer(self)
@@ -239,10 +271,11 @@ class PlayerBar(QFrame):
     def load(self, path, title):
         self.current_path = path
         self.player.setSource(QUrl.fromLocalFile(path))
+        self.player.setPlaybackRate(self._rate)  # may reset on a source change, backend-dependent
         self.player.play()
         self.title_label.setText(title)
         self.title_label.setToolTip(path)
-        self.play_btn.setEnabled(True)
+        self._set_controls_enabled(True)
         self.wave.setEnabled(True)
         self.wave.reset()
         self._load_waveform(path)
@@ -256,7 +289,7 @@ class PlayerBar(QFrame):
         self.current_path = None
         self.title_label.setText("Nothing playing")
         self.title_label.setToolTip("")
-        self.play_btn.setEnabled(False)
+        self._set_controls_enabled(False)
         self.wave.setEnabled(False)
         self.wave.reset()
         self.position_label.setText("00:00")
@@ -267,6 +300,37 @@ class PlayerBar(QFrame):
         self.release()
         if self.loader and self.loader.isRunning():
             self.loader.wait()
+
+    def _set_controls_enabled(self, enabled):
+        for button in (self.back_btn, self.play_btn, self.forward_btn):
+            button.setEnabled(enabled)
+
+    @property
+    def rate(self):
+        return self._rate
+
+    def set_rate(self, rate):
+        """Set the live playback speed; values outside RATE_PRESETS fall back to 1.0x."""
+        try:
+            rate = float(rate)
+        except (TypeError, ValueError):
+            rate = 1.0
+        if rate not in RATE_PRESETS:
+            rate = 1.0
+        self._rate = rate
+        index = RATE_PRESETS.index(rate)
+        if self.rate_combo.currentIndex() != index:
+            self.rate_combo.setCurrentIndex(index)  # re-enters here once, then settles
+            return
+        if self.available:
+            self.player.setPlaybackRate(rate)
+
+    def skip(self, delta_ms):
+        """Seek by delta_ms, clamped to the file; no-op when nothing is loaded."""
+        if not self.available or self.player.source().isEmpty():
+            return
+        target = self.player.position() + delta_ms
+        self.player.setPosition(max(0, min(target, self.player.duration())))
 
     def toggle(self):
         if not self.available or self.player.source().isEmpty():
