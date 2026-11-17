@@ -9,12 +9,23 @@ from dotenv import load_dotenv
 APP_ROOT = Path(__file__).resolve().parents[3]
 ENV_PATH = str(APP_ROOT / ".env")
 API_KEY_VAR = "ELEVENLABS_API_KEY"
+GEMINI_KEY_VAR = "GEMINI_API_KEY"
+
+
+def _load_env_var(name):
+    """Read a variable fresh from .env, so editing .env needs no app restart. '' if unset."""
+    load_dotenv(ENV_PATH, override=True)
+    return os.environ.get(name, "").strip()
 
 
 def load_api_key():
-    """Read the key fresh from .env, so editing .env needs no app restart. '' if unset."""
-    load_dotenv(ENV_PATH, override=True)
-    return os.environ.get(API_KEY_VAR, "").strip()
+    """The ElevenLabs key from .env. '' if unset."""
+    return _load_env_var(API_KEY_VAR)
+
+
+def load_gemini_key():
+    """The optional Google AI Studio key (Notes to script) from .env. '' if unset."""
+    return _load_env_var(GEMINI_KEY_VAR)
 
 
 MODEL_ID = "eleven_v4"
@@ -44,3 +55,10 @@ VOICES = {
     "Max": "Gfpl8Yo74Is0W6cPUWWT",
     "Rachel": "21m00Tcm4TlvDq8ikWAM",
 }
+
+# Notes to script (Gemini free tier).
+# Free-tier models change often; edit the name here only.
+GEMINI_MODEL = "gemini-3.8-flash"
+GEMINI_TIMEOUT_MS = 180_000
+GEMINI_RETRY_ATTEMPTS = 2  # 5xx only; 429 is not retried, the quota will not recover in seconds
+MAX_NOTES_CHARS = 100_000
