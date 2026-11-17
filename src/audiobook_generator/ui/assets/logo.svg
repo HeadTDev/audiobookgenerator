@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b2e36"/>
+      <stop offset="1" stop-color="#141519"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd84a"/>
+      <stop offset="1" stop-color="#f2a400"/>
+    </linearGradient>
+    <linearGradient id="page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7b500"/>
+      <stop offset="1" stop-color="#d98e00"/>
+    </linearGradient>
+  </defs>
+
+  <!-- tile -->
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#bg)"/>
+  <rect x="9" y="9" width="238" height="238" rx="55" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2"/>
+
+  <!-- sound bars rising from the book -->
+  <g fill="url(#amber)">
+    <rect x="62"  y="108" width="20" height="38" rx="10"/>
+    <rect x="90"  y="76"  width="20" height="70" rx="10"/>
+    <rect x="118" y="48"  width="20" height="98" rx="10"/>
+    <rect x="146" y="76"  width="20" height="70" rx="10"/>
+    <rect x="174" y="108" width="20" height="38" rx="10"/>
+  </g>
+
+  <!-- open book -->
+  <path d="M124 170 C100 154 70 151 40 160 L40 204 C70 196 100 198 124 214 Z" fill="url(#page)"/>
+  <path d="M132 170 C156 154 186 151 216 160 L216 204 C186 196 156 198 132 214 Z" fill="url(#page)"/>
+</svg>

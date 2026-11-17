@@ -1,0 +1,45 @@
+[project]
+name = "audiobook-generator"
+version = "1.0.0"
+description = "Turns Markdown scripts into MP3 audiobooks with ElevenLabs."
+readme = "README.md"
+requires-python = ">=3.11"
+# Same list as requirements.txt, which stays for the simple `pip install -r` workflow.
+dependencies = [
+    "PySide6>=6.5",
+    "elevenlabs>=2.0",
+    "httpx>=0.27",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.gui-scripts]
+audiobook-generator = "audiobook_generator.app:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"audiobook_generator.ui" = ["assets/*.svg"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["F", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["audiobook_generator"]
+
+[tool.pyright]
+extraPaths = ["src"]
