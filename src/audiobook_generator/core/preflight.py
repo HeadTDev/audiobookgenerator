@@ -24,7 +24,7 @@ RULES = [
     (MISREAD, re.compile(r"\[[^\]\n]*\]"), "Bracketed text is treated as an audio tag and skipped silently. Remove the brackets."),
     # The token around the slash, without surrounding punctuation: "(zoom/crop)," -> "zoom/crop".
     (MISREAD, re.compile(r"[^\s.,;:!?()\"']*/[^\s.,;:!?()\"']*"),
-     'Slash is read as "per". Write "or", "and" or "per" in words.'),
+     'Slash is read as "per". Write "or", "and" or "per" in words; I/O is always "I-O".'),
     (CHECK, re.compile(r"<=>|<-+|-+>|=>|[←→⇒⇔]"), "Arrow: may be skipped or misread. Describe it in words."),
     (CHECK, re.compile(r"\S*\^\S*"), 'Power "^": write it out, e.g. "to the power of".'),
     (CHECK, re.compile(r"\w+_\w+"), 'Subscript "_": may be read literally. Write e.g. "x sub i".'),

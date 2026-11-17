@@ -49,7 +49,7 @@ FORMAT
 - Write pairs with a hyphen (`Train-Test`, `Publish-Subscribe`) and lists with commas (`RNN, LSTM, GRU`).
 
 PRONUNCIATION (the voice misreads written notation, so spell it out in words)
-- Never write a slash. Write "vagy", "és" or "per" instead: `pozitív vagy negatív`, not `pozitív/negatív`.
+- Never write a slash. Write "vagy", "és" or "per" instead: `pozitív vagy negatív`, not `pozitív/negatív`. I/O is always written `I-O`, never "I per O" or "I vagy O".
 - Square brackets are only for these audio tags: [serious] [slowly] [emphasizes] [pauses]. Put one at the start of a sentence, and use them sparingly. Any other bracketed text is swallowed silently, so never write `[MAR]` or `a[i]`; write "a MAR címen lévő tartalom", "az a tömb i-edik eleme".
 - Write formulas, powers, subscripts, arrows and math symbols (= < > ≤ ≥ ≠ ± × ÷ √ ∑ ∫ ∞) out in words: `p^n` becomes "p az n-ediken", `x_i` becomes "x i-edik eleme", `->` becomes "ebből következik" or similar.
 - Never use backticks, a single `*`, the `|` character or URLs.

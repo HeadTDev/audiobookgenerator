@@ -10,7 +10,7 @@ keep both in sync.
 
 | Written | What v4 does | Write instead |
 |---|---|---|
-| `pozitív/negatív`, `Fully Connected / Dense` | reads the slash as "per" | `pozitív vagy negatív`, `Fully Connected vagy Dense` |
+| `pozitív/negatív`, `Fully Connected / Dense` | reads the slash as "per" | `pozitív vagy negatív`, `Fully Connected vagy Dense`; `I/O` is always `I-O` |
 | `[MAR]`, `a[i]` | treats bracketed text as an audio tag and skips it | `a MAR címen lévő tartalom`, `a i-edik eleme` |
 | `[serious]`, `[slowly]`, `[emphasizes]`, `[pauses]` | interprets them as delivery cues, does not read them | use freely, at the start of a sentence |
 | Greek letters, indexes like `W1`, `τ(n+1)` | read naturally | fine as is |
