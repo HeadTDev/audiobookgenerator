@@ -22,7 +22,8 @@ The "Notes → Script…" button turns a `.txt` or `.md` notes file into a narra
 with Gemini on the free tier (a Google AI Studio key, not Claude). One prompt carries the
 pronunciation rules from [script-writing.md](script-writing.md); the reply goes through the
 pre-flight check, and Gemini gets one repair round for the spots it flags. The result is
-saved into the scripts folder as `_SCRIPT.md`. See `core/script_writer.py`.
+saved into the scripts folder as `_SCRIPT.md`. A model fallback chain (`GEMINI_MODELS`) covers
+per-model quotas and overload. See `core/script_writer.py`.
 
 Remaining: PDF, DOCX and PPTX input. Notes in other languages than Hungarian still get the
 fixed Hungarian TTS language code.

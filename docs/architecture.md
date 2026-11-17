@@ -6,7 +6,7 @@
 src/audiobook_generator/
 ├── app.py              QApplication, window icon, Windows taskbar identity
 ├── core/               generation engine (no widgets)
-│   ├── config.py       models, voices, limits, .env loading (ELEVENLABS_API_KEY, GEMINI_API_KEY, GEMINI_MODEL)
+│   ├── config.py       models, voices, limits, .env loading (ELEVENLABS_API_KEY, GEMINI_API_KEY, GEMINI_MODELS)
 │   ├── text.py         script cleaning, chunking, output names, MP3 tags
 │   ├── preflight.py    notation the voice would misread
 │   ├── script_writer.py  notes to script with Gemini: prompt, repair round, thread
@@ -63,14 +63,35 @@ and partial, and `done(success, message)`.
 
 `ScriptWriterThread` (same shape as `GeneratorThread`: `log_msg`, `done(success, message,
 path)`) reads a `.txt`/`.md` file (UTF-8, cp1250 fallback; capped at `MAX_NOTES_CHARS`) and
-calls Gemini once. The prompt is embedded in code (`PROMPT_RULES`), because `docs/` is not
+calls Gemini. The prompt is embedded in code (`PROMPT_RULES`), because `docs/` is not
 shipped with the package; it condenses [script-writing.md](script-writing.md). The reply is
 checked with `check_script`; on issues, one repair call sends them back in a multi-turn
 conversation. The repair is kept only if it has no more MISREAD/CHECK issues and is not
-suspiciously shorter (a truncated rewrite). The script is saved as `<stem>_SCRIPT.md`,
+suspiciously shorter (a truncated rewrite). The repair always runs on the model that wrote the
+first draft, and if the repair call fails for any reason the first draft is kept. The script is saved as `<stem>_SCRIPT.md`,
 `<stem>_2_SCRIPT.md` and so on on a name clash, never overwriting. The SDK retries 5xx
-only; 429 is reported at once. `describe_error` maps refusals, quota, key, model and network
-failures to user-facing messages.
+only; 429 is not retried by the SDK. `describe_error` maps refusals, quota, key, model and
+network failures to user-facing messages.
+
+Model chain: `GEMINI_MODELS` is tried in order for the first draft, because free-tier quotas
+are per model and models return 503 for long stretches. Fallback errors (next model): HTTP 429
+and 404, 5xx after the SDK retries, read/write/pool timeouts. Not fallback (reported at once):
+400/401/403 (same key for every model), connection errors (network down, including connect
+timeouts) and `ScriptWriterError` (refusal, `MAX_TOKENS`, empty reply). All models failing
+raises "All Gemini models failed". `ScriptResult.model` is the model that wrote the kept text.
+The thread passes `isInterruptionRequested` as `should_stop`, so closing the window waits for
+at most one call in flight.
+
+### Model choice (2026-11-18)
+
+Tested on one 3k-char Hungarian OS note, one run each:
+
+1. `gemini-3.8-flash`: best language and explanations; frequent 503 at peak.
+2. `gemini-4-hydrogen`: most faithful, but ~100 s and over-expands abbreviations.
+3. `gemini-3.1-flash-lite`: fast, 500 requests/day, plainer, wrote "I per O".
+
+Excluded: `gemini-3.5-flash-lite` (garbled Hungarian words that the pre-flight cannot catch),
+`gemini-2.5-flash-lite` (404 for new users), `gemini-3.6-flash` (only 503s, untested).
 
 ## UI notes
 

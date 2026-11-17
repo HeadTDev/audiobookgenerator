@@ -38,7 +38,9 @@ Optional: `pip install -e .` installs the package with an `audiobook-generator` 
 
 The sidebar button "Notes → Script…" writes a narration script from a `.txt` or `.md` notes
 file with Gemini and saves it into the scripts folder as `<name>_SCRIPT.md` (an existing file
-is never overwritten). The result is pre-flight checked once and fixed once; what is left
+is never overwritten). It tries several free-tier models in order (a used-up quota or an
+overloaded model moves on to the next one); the log and the ✅ line show which model wrote the
+script. The result is pre-flight checked once and fixed once; what is left
 shows in the CHECK column. Keep the notes outside the scripts folder, otherwise they would
 be listed as scripts. Free tier: Google may use the notes to improve its products.
 

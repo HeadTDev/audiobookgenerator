@@ -5,6 +5,7 @@ import pytest
 from google.genai import errors
 
 from audiobook_generator.core import script_writer
+from audiobook_generator.core.config import GEMINI_MODELS
 from audiobook_generator.core.script_writer import (
     ScriptWriterError,
     ScriptWriterThread,
@@ -32,9 +33,12 @@ class FakeGemini:
         self.calls = []
         self.models = self
 
-    def generate_content(self, **kwargs):
-        self.calls.append(kwargs)
-        return self.responses.pop(0)
+    def generate_content(self, model, **kwargs):
+        self.calls.append({"model": model, **kwargs})
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 def turn_texts(call):
@@ -54,16 +58,17 @@ def test_clean_reply_is_one_call():
     result = notes_to_script(fake, "jegyzet", "j.md")
     assert len(fake.calls) == 1
     assert result.text.strip() == CLEAN.strip() and result.issues == [] and not result.repaired
+    assert result.model == GEMINI_MODELS[0] and fake.calls[0]["model"] == GEMINI_MODELS[0]
 
 
 def test_repair_round_fixes_issues():
     fake = FakeGemini(reply(BAD), reply(CLEAN))
     logs = []
-    result = notes_to_script(fake, "jegyzet", "j.md", logs.append)
+    result = notes_to_script(fake, "jegyzet", "j.md", log=logs.append)
     assert len(fake.calls) == 2 and result.repaired and result.text == CLEAN.strip()
     texts = turn_texts(fake.calls[1])
     assert len(texts) == 3 and "Line 2" in texts[2] and "I/O" in texts[2]
-    assert logs and "1 issue" in logs[0]
+    assert any("1 issue" in m for m in logs)
 
 
 def test_worse_repair_keeps_first():
@@ -77,6 +82,13 @@ def test_truncated_repair_keeps_first():
     fake = FakeGemini(reply(BAD + "Hosszú sor. " * 20), reply("# T1: Teszt - SCRIPT\nRövid."))
     result = notes_to_script(fake, "jegyzet", "j.md")
     assert not result.repaired and "Hosszú" in result.text
+
+
+def test_failed_repair_keeps_first_draft():
+    busy = errors.ServerError(503, {"error": {"message": "busy", "status": "UNAVAILABLE"}})
+    fake = FakeGemini(reply(BAD), busy)
+    result = notes_to_script(fake, "jegyzet", "j.md")
+    assert result.text == BAD.strip() and not result.repaired and result.issues
 
 
 def test_code_fence_is_stripped():
@@ -120,7 +132,7 @@ class FakeTransportError(Exception):
         (errors.ClientError(429, {"error": {"message": "quota", "status": "RESOURCE_EXHAUSTED"}}), "limit reached"),
         (errors.ClientError(401, {"error": {"message": "nope", "status": "UNAUTHENTICATED"}}), "rejected the API key"),
         (errors.ClientError(400, {"error": {"message": "API key not valid", "status": "INVALID_ARGUMENT"}}), "rejected the API key"),
-        (errors.ClientError(404, {"error": {"message": "gone", "status": "NOT_FOUND"}}), "GEMINI_MODEL"),
+        (errors.ClientError(404, {"error": {"message": "gone", "status": "NOT_FOUND"}}), "GEMINI_MODELS"),
         (errors.ClientError(400, {"error": {"message": "bad", "status": "INVALID_ARGUMENT"}}), "HTTP 400 INVALID_ARGUMENT"),
         (errors.ServerError(503, {"error": {"message": "busy", "status": "UNAVAILABLE"}}), "overloaded"),
         (FakeTransportError("boom"), "Network error"),
@@ -152,7 +164,7 @@ def test_thread_saves_script(qapp, monkeypatch, tmp_path):
     logs, done = run_thread(monkeypatch, FakeGemini(reply(CLEAN)), "key", notes, folder)
     path = folder / "jegyzet_SCRIPT.md"
     assert path.read_text(encoding="utf-8") == CLEAN
-    assert done == [(True, "✅ Script saved: jegyzet_SCRIPT.md · pre-flight clean", str(path))]
+    assert done == [(True, f"✅ Script saved: jegyzet_SCRIPT.md ({GEMINI_MODELS[0]}) · pre-flight clean", str(path))]
     assert logs[0].startswith("✍️")
 
 

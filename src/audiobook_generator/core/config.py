@@ -57,8 +57,10 @@ VOICES = {
 }
 
 # Notes to script (Gemini free tier).
-# Free-tier models change often; edit the name here only.
-GEMINI_MODEL = "gemini-3.8-flash"
+# Free-tier models change often; edit the names here only.
+# Tried in order (quota or overload moves on to the next); ranking from a comparison on
+# 2026-11-18, see docs/architecture.md. Free quotas are per model.
+GEMINI_MODELS = ("gemini-3.8-flash", "gemini-4-hydrogen", "gemini-3.1-flash-lite")
 GEMINI_TIMEOUT_MS = 180_000
 GEMINI_RETRY_ATTEMPTS = 2  # 5xx only; 429 is not retried, the quota will not recover in seconds
 MAX_NOTES_CHARS = 100_000

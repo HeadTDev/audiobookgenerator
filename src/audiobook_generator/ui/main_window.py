@@ -955,6 +955,7 @@ class MainWindow(QMainWindow):
             self.worker.stop()
             self.worker.wait()
         if self.script_worker and self.script_worker.isRunning():
+            self.script_worker.requestInterruption()  # the wait is at most the call in flight
             self.script_worker.wait()
         self.player_bar.shutdown()
         self._close_log_file()

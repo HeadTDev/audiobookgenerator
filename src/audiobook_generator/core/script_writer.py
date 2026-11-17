@@ -3,7 +3,8 @@
 The pronunciation rules live in PROMPT_RULES (condensed from docs/script-writing.md, keep
 both in sync) and are embedded in code, because docs/ is not shipped with the package.
 The reply goes through the pre-flight check; if it finds problems, Gemini gets exactly
-one chance to fix them.
+one chance to fix them. Models are tried in order (GEMINI_MODELS); quota and overload errors
+move on to the next one.
 """
 import os
 import re
@@ -14,7 +15,7 @@ from google.genai import errors, types
 from PySide6.QtCore import QThread, Signal
 
 from .config import (
-    GEMINI_MODEL,
+    GEMINI_MODELS,
     GEMINI_RETRY_ATTEMPTS,
     GEMINI_TIMEOUT_MS,
     MAX_NOTES_CHARS,
@@ -67,6 +68,7 @@ class ScriptResult:
     text: str
     issues: list[Issue]  # pre-flight issues left in `text`
     repaired: bool  # True when the repair round's answer was kept
+    model: str  # the model that wrote `text`
 
 
 def read_notes(path):
@@ -135,10 +137,10 @@ def _strip_fence(text):
     return text.strip()
 
 
-def _generate(client, contents):
+def _generate(client, contents, model):
     """One Gemini call; the script text, or ScriptWriterError for refusals and bad replies."""
     response = client.models.generate_content(
-        model=GEMINI_MODEL,
+        model=model,
         contents=contents,
         config=types.GenerateContentConfig(system_instruction=build_system_prompt(), temperature=0.4),
     )
@@ -159,23 +161,56 @@ def _generate(client, contents):
     return text
 
 
-def notes_to_script(client, notes_text, notes_name, log=lambda m: None):
-    """Script for the notes, with at most one repair round driven by the pre-flight check."""
+def _is_timeout(e):
+    """A read/write/pool timeout (the model is slow), not a failure to connect."""
+    if isinstance(e, TimeoutError):
+        return True
+    name = type(e).__name__
+    return type(e).__module__.split(".")[0] in ("httpx", "httpx2") and "Timeout" in name and name != "ConnectTimeout"
+
+
+def _is_fallback(e):
+    """Errors that are specific to one model, so the next model may still work."""
+    if isinstance(e, errors.ClientError):
+        return e.code in (429, 404)
+    return isinstance(e, errors.ServerError) or _is_timeout(e)
+
+
+def notes_to_script(client, notes_text, notes_name, models=GEMINI_MODELS, log=lambda m: None, should_stop=lambda: False):
+    """Script for the notes: first draft from the first model that answers, then at most one repair round."""
     contents = [_turn("user", build_user_prompt(notes_text, notes_name))]
-    first = _generate(client, contents)
+    last = None
+    for model in models:
+        if should_stop():
+            raise ScriptWriterError("Stopped.")
+        log(f"✍️ Trying {model}…")
+        try:
+            first = _generate(client, contents, model)
+            break
+        except Exception as e:
+            if not _is_fallback(e):
+                raise
+            last = e
+            log(f"⚠️ {model}: {describe_error(e)} → trying next model")
+    else:
+        raise ScriptWriterError(f"All Gemini models failed. Last error: {describe_error(last)}")
     first_issues = check_script(first)
     if not first_issues:
-        return ScriptResult(first, [], False)
+        return ScriptResult(first, [], False, model)
 
-    log(f"🔧 Pre-flight found {len(first_issues)} issue(s), asking Gemini to fix them once…")
+    log(f"🔧 Pre-flight found {len(first_issues)} issue(s), asking {model} to fix them once…")
     contents += [_turn("model", first), _turn("user", build_repair_prompt(first_issues))]
-    second = _generate(client, contents)
+    try:
+        second = _generate(client, contents, model)
+    except Exception as e:
+        log(f"⚠️ Repair failed ({describe_error(e)}); keeping the first draft.")
+        return ScriptResult(first, first_issues, False, model)
     second_issues = check_script(second)
     not_worse = count_by_severity(second_issues) <= count_by_severity(first_issues)  # MISREAD first
     complete = len(second) >= MIN_REPAIR_LENGTH_RATIO * len(first)
     if not_worse and complete:
-        return ScriptResult(second, second_issues, True)
-    return ScriptResult(first, first_issues, False)
+        return ScriptResult(second, second_issues, True, model)
+    return ScriptResult(first, first_issues, False, model)
 
 
 def script_path_for(notes_path, scripts_folder):
@@ -211,10 +246,12 @@ def describe_error(e):
         if e.code in (401, 403) or (e.code == 400 and "API key not valid" in str(e.message)):
             return "Gemini rejected the API key. Check GEMINI_API_KEY in .env."
         if e.code == 404:
-            return f"Model '{GEMINI_MODEL}' not found. Free-tier models change; update GEMINI_MODEL in core/config.py."
+            return "Model not found. Free-tier models change; update GEMINI_MODELS in core/config.py."
         return f"Gemini error (HTTP {e.code} {e.status}): {e.message}"
     if isinstance(e, errors.ServerError):
         return "Gemini is overloaded or unavailable. Try again later."
+    if _is_timeout(e):
+        return "Gemini did not answer in time."
     # The SDK's HTTP transport is not httpx proper, so match by package instead of importing it.
     if type(e).__module__.split(".")[0] in ("httpx", "httpx2") or isinstance(e, (ConnectionError, TimeoutError)):
         return "Network error: check the internet connection."
@@ -241,7 +278,7 @@ class ScriptWriterThread(QThread):
                 raise ScriptWriterError("GEMINI_API_KEY is not set in .env (free key: aistudio.google.com).")
             notes_name = os.path.basename(self.notes_path)
             notes_text = read_notes(self.notes_path)
-            self.log_msg.emit(f"✍️ Writing script from {notes_name} with {GEMINI_MODEL}…")
+            self.log_msg.emit(f"✍️ Writing script from {notes_name}…")
             client = genai.Client(
                 api_key=self.api_key,
                 http_options=types.HttpOptions(
@@ -252,14 +289,16 @@ class ScriptWriterThread(QThread):
                     ),
                 ),
             )
-            result = notes_to_script(client, notes_text, notes_name, self.log_msg.emit)
+            result = notes_to_script(
+                client, notes_text, notes_name, log=self.log_msg.emit, should_stop=self.isInterruptionRequested
+            )
             path = script_path_for(self.notes_path, self.scripts_folder)
             save_script(result.text, path)
             name = os.path.basename(path)
             if result.issues:
-                message = f"✅ Script saved: {name} · {len(result.issues)} pre-flight issue(s) left, see CHECK column"
+                message = f"✅ Script saved: {name} ({result.model}) · {len(result.issues)} pre-flight issue(s) left, see CHECK column"
             else:
-                message = f"✅ Script saved: {name} · pre-flight clean"
+                message = f"✅ Script saved: {name} ({result.model}) · pre-flight clean"
             self.done.emit(True, message, path)
         except Exception as e:
             message = describe_error(e)
